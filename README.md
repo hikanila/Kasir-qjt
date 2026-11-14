@@ -39,6 +39,7 @@ PWA (offline & kamera) butuh **HTTPS**, jadi pakai hosting di atas (semuanya gra
 9. Pindah data dari mode lokal: di mode lokal **Unduh backup** → setelah tersambung online, **Pulihkan dari file**.
 
 ## Struktur kode
+- `src/firebase-config.ts` — konfigurasi Firebase project kasir-qjt (kosongkan apiKey untuk kembali ke mode lokal)
 - `src/lib/backend.ts` — lapisan data (Dexie/IndexedDB untuk lokal, Firestore + cache offline untuk online)
 - `src/lib/store.tsx` — state & aksi (checkout, stok, bon, log)
 - `src/lib/nota.ts` — format nota 32 kolom (58mm), gambar PNG, WA, cetak

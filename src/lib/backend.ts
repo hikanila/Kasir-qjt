@@ -1,5 +1,6 @@
 import Dexie, { liveQuery } from 'dexie'
 import type { FirebaseOptions } from 'firebase/app'
+import { FIREBASE_CONFIG } from '../firebase-config'
 
 export type Col = 'products' | 'sales' | 'customers' | 'payments' | 'moves' | 'logs' | 'settings' | 'users'
 export const COLS: Col[] = ['products', 'sales', 'customers', 'payments', 'moves', 'logs', 'settings', 'users']
@@ -93,6 +94,7 @@ export function getFirebaseConfig(): FirebaseOptions | null {
       appId: env.VITE_FIREBASE_APP_ID,
     }
   }
+  if (FIREBASE_CONFIG.apiKey) return FIREBASE_CONFIG
   try {
     const raw = localStorage.getItem(CFG_KEY)
     return raw ? (JSON.parse(raw) as FirebaseOptions) : null
@@ -120,7 +122,7 @@ export function saveFirebaseConfig(cfg: FirebaseOptions | null) {
   else localStorage.removeItem(CFG_KEY)
 }
 
-export const hasEnvConfig = () => Boolean(import.meta.env.VITE_FIREBASE_API_KEY)
+export const hasEnvConfig = () => Boolean(import.meta.env.VITE_FIREBASE_API_KEY || FIREBASE_CONFIG.apiKey)
 
 async function firebaseBackend(cfg: FirebaseOptions): Promise<Backend> {
   const [{ initializeApp }, fs, au] = await Promise.all([
