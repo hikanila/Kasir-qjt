@@ -266,3 +266,6 @@ div.hist-row { cursor: default; }
   .lbl .lp { font-size: 10pt; }
   .lbl svg { max-width: 100%; height: auto; }
 }
+
+.backup-banner { display: flex; align-items: center; gap: 8px; background: #fff7ed; color: #9a3412; border-bottom: 1px solid #fed7aa; padding: 6px 12px; font-size: .85rem; }
+.backup-banner span { flex: 1; }

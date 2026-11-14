@@ -13,7 +13,11 @@ const LOCAL_ME: AppUser = { id: 'lokal', nama: 'Pemilik', role: 'pemilik' }
 
 export default function App() {
   const [backend, setBackend] = useState<Backend | null>(null)
-  useEffect(() => { createBackend().then(setBackend) }, [])
+  useEffect(() => {
+    createBackend().then(setBackend)
+    // Minta browser agar data aplikasi tidak dihapus otomatis saat memori penuh.
+    navigator.storage?.persist?.().catch(() => {})
+  }, [])
   if (!backend) return <Splash text="Memuat…" />
   if (backend.mode === 'lokal') return <StoreProvider backend={backend} me={LOCAL_ME}><Shell /></StoreProvider>
   return <AuthGate backend={backend} />
@@ -157,6 +161,7 @@ function Shell() {
           <span className="me">{st.me.nama}</span>
         </div>
       </header>
+      <BackupReminder onOpen={() => setPage('lainnya')} />
       <main className={'main' + (page === 'kasir' ? ' main-kasir' : '')}>
         {!st.ready ? <Splash text="Memuat data…" /> : (
           <>
@@ -178,6 +183,25 @@ function Shell() {
           </button>
         ))}
       </nav>
+    </div>
+  )
+}
+
+export const LAST_BACKUP_KEY = 'qjt-last-backup'
+
+function BackupReminder({ onOpen }: { onOpen: () => void }) {
+  const st = useStore()
+  const [hide, setHide] = useState(false)
+  if (hide || st.backend.mode !== 'lokal' || !st.isOwner || st.sales.length === 0) return null
+  let last = 0
+  try { last = Number(localStorage.getItem(LAST_BACKUP_KEY)) || 0 } catch { /* */ }
+  const hari = Math.floor((Date.now() - last) / 864e5)
+  if (last && hari < 7) return null
+  return (
+    <div className="backup-banner">
+      <span>{last ? `Backup terakhir ${hari} hari lalu.` : 'Data belum pernah di-backup.'} Data mode lokal hanya ada di perangkat ini.</span>
+      <button className="btn sm" onClick={onOpen}>Backup</button>
+      <button className="icon-btn" onClick={() => setHide(true)} aria-label="Tutup">✕</button>
     </div>
   )
 }

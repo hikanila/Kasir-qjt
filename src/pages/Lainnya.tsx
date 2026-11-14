@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { AppUser, Sale, Settings } from '../types'
 import { useStore } from '../lib/store'
 import { qtyFmt, rp, startOfDay, tgl, tglJam } from '../lib/format'
@@ -266,6 +266,7 @@ function Backup() {
       const data = await snapshotAll(st.backend)
       const blob = new Blob([JSON.stringify({ app: 'kasir-qjt', versi: 1, waktu: Date.now(), data }, null, 1)], { type: 'application/json' })
       download(blob, `backup-kasir-${tgl(Date.now()).split('/').reverse().join('-')}.json`)
+      try { localStorage.setItem('qjt-last-backup', String(Date.now())) } catch { /* */ }
     } finally { setBusy(false) }
   }
   function importAll(file: File) {
@@ -284,6 +285,7 @@ function Backup() {
   return (
     <div className="card">
       <h4>Backup data</h4>
+      <BackupStatus />
       <p className="muted small">Simpan cadangan secara berkala (mis. kirim ke WA/Google Drive sendiri). Backup juga dipakai untuk memindahkan data mode lokal ke database online.</p>
       <div className="row">
         <button className="btn" disabled={busy} onClick={exportAll}>Unduh backup</button>
@@ -292,5 +294,18 @@ function Backup() {
         </label>
       </div>
     </div>
+  )
+}
+
+function BackupStatus() {
+  const [persist, setPersist] = useState<boolean | null>(null)
+  useEffect(() => { navigator.storage?.persisted?.().then(setPersist).catch(() => {}) }, [])
+  let last = 0
+  try { last = Number(localStorage.getItem('qjt-last-backup')) || 0 } catch { /* */ }
+  return (
+    <p className="small">
+      Backup terakhir: <b>{last ? tglJam(last) : 'belum pernah'}</b>
+      {persist !== null && <> · Penyimpanan permanen: <b className={persist ? 'ok-text' : 'warn-text'}>{persist ? 'aktif' : 'belum'}</b></>}
+    </p>
   )
 }
