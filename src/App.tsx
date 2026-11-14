@@ -66,6 +66,8 @@ const authError = (e: unknown) => {
   if (/invalid-email/.test(c)) return 'Format email tidak valid.'
   if (/network/.test(c)) return 'Tidak ada internet. Login pertama kali butuh koneksi.'
   if (/too-many/.test(c)) return 'Terlalu banyak percobaan. Coba lagi nanti.'
+  if (/operation-not-allowed/.test(c)) return 'Login Email/Password belum diaktifkan di Firebase (Authentication → Sign-in method).'
+  if (/api-key/.test(c)) return 'Konfigurasi Firebase salah (API key). Hubungi pengelola aplikasi.'
   return c
 }
 
