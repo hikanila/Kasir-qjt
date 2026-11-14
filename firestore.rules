@@ -1,0 +1,53 @@
+rules_version = '2';
+// Aturan keamanan Firestore untuk Kasir TB. Qeela Jaya Tama.
+// Salin seluruh isi file ini ke Firebase Console → Firestore Database → Rules → Publish.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function base() { return /databases/$(database)/documents/toko/utama; }
+    function me() { return get(/databases/$(database)/documents/toko/utama/users/$(request.auth.uid)).data; }
+    function signedIn() { return request.auth != null; }
+    function active() { return signedIn() && exists(/databases/$(database)/documents/toko/utama/users/$(request.auth.uid)) && me().role in ['pemilik', 'kasir']; }
+    function owner() { return active() && me().role == 'pemilik'; }
+
+    match /toko/utama {
+      // Penanda pemilik: hanya bisa dibuat sekali, oleh pendaftar pertama.
+      match /meta/pemilik {
+        allow read: if signedIn();
+        allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+        allow update, delete: if false;
+      }
+
+      match /users/{uid} {
+        allow read: if (signedIn() && request.auth.uid == uid) || active();
+        // Daftar sendiri: sebagai "menunggu", atau sebagai "pemilik" jika ia yang membuat penanda pemilik.
+        allow create: if signedIn() && request.auth.uid == uid && (
+          request.resource.data.role == 'menunggu' ||
+          (request.resource.data.role == 'pemilik' &&
+            getAfter(/databases/$(database)/documents/toko/utama/meta/pemilik).data.uid == request.auth.uid)
+        );
+        allow update, delete: if owner();
+      }
+
+      // Riwayat aktivitas: semua pengguna aktif boleh menambah, hanya pemilik yang boleh membaca. Tidak bisa diubah/dihapus.
+      match /logs/{id} {
+        allow create: if active();
+        allow read: if owner();
+        allow update, delete: if false;
+      }
+
+      match /settings/{id} {
+        allow read: if active();
+        allow write: if owner();
+      }
+
+      match /products/{id} {
+        allow read, create, update: if active();
+        allow delete: if owner();
+      }
+
+      match /{col}/{id} {
+        allow read, write: if active() && col in ['sales', 'customers', 'payments', 'moves'];
+      }
+    }
+  }
+}
