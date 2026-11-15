@@ -50,6 +50,8 @@ export interface Sale {
   kembali: number
   status: 'ok' | 'batal'
   alasanBatal?: string
+  batalOleh?: string
+  batalWaktu?: number
 }
 
 export interface Customer {
@@ -58,6 +60,8 @@ export interface Customer {
   hp?: string
   catatan?: string
   dibuat: number
+  /** Sisa hutang (positif) atau kelebihan bayar (negatif). Diubah secara atomik. */
+  saldo?: number
 }
 
 export interface Payment {
@@ -68,6 +72,10 @@ export interface Payment {
   waktu: number
   kasir: string
   catatan?: string
+  status?: 'ok' | 'batal'
+  alasanBatal?: string
+  batalOleh?: string
+  batalWaktu?: number
 }
 
 export type MoveType = 'masuk' | 'keluar' | 'sesuai' | 'jual' | 'batal'

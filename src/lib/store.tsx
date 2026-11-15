@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import type { Backend, Col } from './backend'
+import type { Backend, Col, Since } from './backend'
 import type {
   AppUser, Customer, LogEntry, Move, MoveType, Payment, Product, Sale, Settings,
 } from '../types'
-import { qtyFmt, rp, uid } from './format'
+import { qtyFmt, rp, startOfDay, tglJam, uid } from './format'
 
 export const DEFAULT_SETTINGS: Settings = {
   id: 'toko',
@@ -29,7 +29,12 @@ export interface Store extends Omit<Data, 'settingsRows'> {
   me: AppUser
   isOwner: boolean
   settings: Settings
+  /** Sisa hutang per pelanggan (negatif = kelebihan bayar). */
   hutang: Map<string, number>
+  /** Data penjualan/pembayaran sebelum waktu ini tidak dimuat otomatis (ambil lewat query). */
+  sinceSales: number
+  /** Riwayat stok & aktivitas sebelum waktu ini tidak dimuat otomatis. */
+  sinceLogs: number
   ready: boolean
   log(aksi: string, detail: string): void
   saveProduct(p: Product, isNew: boolean): void
@@ -38,8 +43,10 @@ export interface Store extends Omit<Data, 'settingsRows'> {
   setStock(p: Product, stokBaru: number, keterangan?: string): void
   checkout(sale: Sale): void
   cancelSale(sale: Sale, alasan: string): void
-  saveCustomer(c: Customer): void
+  addCustomer(c: Customer): void
+  updateCustomer(c: Customer, patch: Pick<Customer, 'nama' | 'hp' | 'catatan'>): void
   addPayment(p: Payment, namaPelanggan: string): void
+  cancelPayment(p: Payment, alasan: string, namaPelanggan: string): void
   saveSettings(s: Settings): void
   setUserRole(u: AppUser, role: AppUser['role']): void
   removeUser(u: AppUser): void
@@ -57,37 +64,41 @@ const empty: Data = {
   products: [], sales: [], customers: [], payments: [], moves: [], logs: [], users: [], settingsRows: [],
 }
 
+/** Lama data yang dimuat otomatis. Data yang lebih lama tetap tersimpan dan diambil saat dibutuhkan. */
+const HARI_PENJUALAN = 62
+const HARI_RIWAYAT = 31
+
 export function StoreProvider({ backend, me, children }: { backend: Backend; me: AppUser; children: ReactNode }) {
   const [data, setData] = useState<Data>(empty)
   const [loaded, setLoaded] = useState<Set<string>>(new Set())
   const isOwner = me.role === 'pemilik'
+  // Dihitung sekali saat aplikasi dibuka (batas tidak bergeser selama sesi).
+  const [sinceSales] = useState(() => startOfDay() - HARI_PENJUALAN * 864e5)
+  const [sinceLogs] = useState(() => startOfDay() - HARI_RIWAYAT * 864e5)
 
   useEffect(() => {
-    const map: [keyof Data, Col][] = [
-      ['products', 'products'], ['sales', 'sales'], ['customers', 'customers'], ['payments', 'payments'],
-      ['moves', 'moves'], ['settingsRows', 'settings'],
+    const map: [keyof Data, Col, Since?][] = [
+      ['products', 'products'], ['customers', 'customers'], ['settingsRows', 'settings'],
+      ['sales', 'sales', { field: 'waktu', from: sinceSales }],
+      ['payments', 'payments', { field: 'waktu', from: sinceSales }],
+      ['moves', 'moves', { field: 'waktu', from: sinceLogs }],
     ]
-    if (isOwner) map.push(['logs', 'logs'])
+    if (isOwner) map.push(['logs', 'logs', { field: 'waktu', from: sinceLogs }])
     if (backend.mode === 'online') map.push(['users', 'users'])
-    const unsubs = map.map(([key, col]) =>
+    const unsubs = map.map(([key, col, since]) =>
       backend.subscribe(col, (rows) => {
         setData((d) => ({ ...d, [key]: rows }))
         setLoaded((l) => (l.has(key) ? l : new Set(l).add(key)))
-      }),
+      }, since),
     )
     return () => unsubs.forEach((u) => u())
-  }, [backend, isOwner])
+  }, [backend, isOwner, sinceSales, sinceLogs])
 
   const store = useMemo<Store>(() => {
     const settings = { ...DEFAULT_SETTINGS, ...data.settingsRows.find((s) => s.id === 'toko') }
 
-    // Hutang per pelanggan = sisa bon (total - DP) dikurangi pembayaran.
-    const hutang = new Map<string, number>()
-    for (const s of data.sales) {
-      if (s.status !== 'ok' || s.metode !== 'bon' || !s.pelangganId) continue
-      hutang.set(s.pelangganId, (hutang.get(s.pelangganId) || 0) + (s.total - s.bayar))
-    }
-    for (const p of data.payments) hutang.set(p.customerId, (hutang.get(p.customerId) || 0) - p.jumlah)
+    // Saldo hutang disimpan di data pelanggan dan diubah atomik setiap bon/bayar/batal.
+    const hutang = new Map<string, number>(data.customers.map((c) => [c.id, Math.round(c.saldo || 0)]))
 
     const log = (aksi: string, detail: string) =>
       backend.put('logs', { id: uid(), waktu: Date.now(), user: me.nama, aksi, detail } satisfies LogEntry)
@@ -100,7 +111,7 @@ export function StoreProvider({ backend, me, children }: { backend: Backend; me:
 
     return {
       ...data,
-      backend, me, isOwner, settings, hutang, log,
+      backend, me, isOwner, settings, hutang, log, sinceSales, sinceLogs,
       ready: loaded.has('products') && loaded.has('settingsRows'),
 
       saveProduct(p, isNew) {
@@ -148,10 +159,17 @@ export function StoreProvider({ backend, me, children }: { backend: Backend; me:
           }
         }
         if (sale.diskon) log('Diskon', `${sale.no}: ${rp(sale.diskon)}`)
-        if (sale.metode === 'bon') log('Bon', `${sale.no}: ${sale.pelangganNama} ${rp(sale.total - sale.bayar)}`)
+        if (sale.metode === 'bon' && sale.pelangganId) {
+          backend.increment('customers', sale.pelangganId, 'saldo', sale.total - sale.bayar)
+          log('Bon', `${sale.no}: ${sale.pelangganNama} ${rp(sale.total - sale.bayar)}`)
+        }
       },
       cancelSale(sale, alasan) {
-        backend.put('sales', { ...sale, status: 'batal', alasanBatal: alasan })
+        if (sale.status !== 'ok') return
+        backend.update('sales', sale.id, { status: 'batal', alasanBatal: alasan, batalOleh: me.nama, batalWaktu: Date.now() })
+        if (sale.metode === 'bon' && sale.pelangganId) {
+          backend.increment('customers', sale.pelangganId, 'saldo', -(sale.total - sale.bayar))
+        }
         for (const it of sale.items) {
           const delta = it.qty * it.isi
           backend.addStock(it.productId, delta)
@@ -160,12 +178,23 @@ export function StoreProvider({ backend, me, children }: { backend: Backend; me:
         }
         log('Batalkan transaksi', `${sale.no} ${rp(sale.total)} — ${alasan}`)
       },
-      saveCustomer(c) {
-        backend.put('customers', c)
+      addCustomer(c) {
+        backend.put('customers', { ...c, saldo: 0 })
+      },
+      updateCustomer(c, patch) {
+        // Saldo tidak ikut ditulis agar tidak menimpa perubahan dari perangkat lain.
+        backend.update('customers', c.id, { nama: patch.nama, hp: patch.hp ?? null, catatan: patch.catatan ?? null })
       },
       addPayment(p, nama) {
-        backend.put('payments', p)
+        backend.put('payments', { ...p, status: 'ok' })
+        backend.increment('customers', p.customerId, 'saldo', -p.jumlah)
         log('Terima bayar bon', `${nama} ${rp(p.jumlah)} (${p.metode})`)
+      },
+      cancelPayment(p, alasan, nama) {
+        if (p.status === 'batal') return
+        backend.update('payments', p.id, { status: 'batal', alasanBatal: alasan, batalOleh: me.nama, batalWaktu: Date.now() })
+        backend.increment('customers', p.customerId, 'saldo', p.jumlah)
+        log('Batalkan pembayaran bon', `${nama} ${rp(p.jumlah)} (${tglJam(p.waktu)}) — ${alasan}`)
       },
       saveSettings(s) {
         backend.put('settings', s)
@@ -180,7 +209,7 @@ export function StoreProvider({ backend, me, children }: { backend: Backend; me:
         log('Hapus pengguna', `${u.nama} (${u.email || '-'})`)
       },
     }
-  }, [data, loaded, backend, me, isOwner])
+  }, [data, loaded, backend, me, isOwner, sinceSales, sinceLogs])
 
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>
 }

@@ -1,13 +1,24 @@
 rules_version = '2';
-// Aturan keamanan Firestore untuk Kasir TB. Qeela Jaya Tama.
+// Aturan keamanan Firestore untuk Kasir TB. Qeela Jaya Tama (versi 2).
 // Salin seluruh isi file ini ke Firebase Console → Firestore Database → Rules → Publish.
+//
+// Prinsip: data penjualan, pembayaran bon, riwayat stok, pelanggan, dan aktivitas
+// TIDAK BISA DIHAPUS dari aplikasi oleh siapa pun. Kesalahan dikoreksi dengan
+// "membatalkan" (status menjadi 'batal' + alasan), sehingga jejaknya tetap ada.
 service cloud.firestore {
   match /databases/{database}/documents {
-    function base() { return /databases/$(database)/documents/toko/utama; }
     function me() { return get(/databases/$(database)/documents/toko/utama/users/$(request.auth.uid)).data; }
     function signedIn() { return request.auth != null; }
     function active() { return signedIn() && exists(/databases/$(database)/documents/toko/utama/users/$(request.auth.uid)) && me().role in ['pemilik', 'kasir']; }
     function owner() { return active() && me().role == 'pemilik'; }
+    // Perubahan hanya boleh: status 'ok' → 'batal' beserta alasan, oleh siapa, dan kapan.
+    function onlyCancel() {
+      return resource.data.status == 'ok'
+        && request.resource.data.status == 'batal'
+        && request.resource.data.alasanBatal is string
+        && request.resource.data.alasanBatal.size() > 0
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'alasanBatal', 'batalOleh', 'batalWaktu']);
+    }
 
     match /toko/utama {
       // Penanda pemilik: hanya bisa dibuat sekali, oleh pendaftar pertama.
@@ -19,7 +30,6 @@ service cloud.firestore {
 
       match /users/{uid} {
         allow read: if (signedIn() && request.auth.uid == uid) || active();
-        // Daftar sendiri: sebagai "menunggu", atau sebagai "pemilik" jika ia yang membuat penanda pemilik.
         allow create: if signedIn() && request.auth.uid == uid && (
           request.resource.data.role == 'menunggu' ||
           (request.resource.data.role == 'pemilik' &&
@@ -28,7 +38,7 @@ service cloud.firestore {
         allow update, delete: if owner();
       }
 
-      // Riwayat aktivitas: semua pengguna aktif boleh menambah, hanya pemilik yang boleh membaca. Tidak bisa diubah/dihapus.
+      // Riwayat aktivitas: hanya bisa ditambah; hanya pemilik yang bisa membaca.
       match /logs/{id} {
         allow create: if active();
         allow read: if owner();
@@ -40,13 +50,39 @@ service cloud.firestore {
         allow write: if owner();
       }
 
+      // Barang: kasir boleh menambah & mengubah (tercatat di riwayat), hanya pemilik yang boleh menghapus.
       match /products/{id} {
         allow read, create, update: if active();
         allow delete: if owner();
       }
 
-      match /{col}/{id} {
-        allow read, write: if active() && col in ['sales', 'customers', 'payments', 'moves'];
+      // Pelanggan: boleh ditambah & diubah (nama/HP/saldo), tidak bisa dihapus.
+      match /customers/{id} {
+        allow read, create, update: if active();
+        allow delete: if false;
+      }
+
+      // Penjualan: ditambah dengan status 'ok'; hanya bisa dibatalkan; tidak bisa dihapus.
+      // (Pemilik boleh membuat dengan status apa pun — dipakai saat memulihkan backup.)
+      match /sales/{id} {
+        allow read: if active();
+        allow create: if active() && (request.resource.data.get('status', 'ok') == 'ok' || owner());
+        allow update: if active() && onlyCancel();
+        allow delete: if false;
+      }
+
+      // Pembayaran bon: aturan sama seperti penjualan.
+      match /payments/{id} {
+        allow read: if active();
+        allow create: if active() && (request.resource.data.get('status', 'ok') == 'ok' || owner());
+        allow update: if active() && onlyCancel();
+        allow delete: if false;
+      }
+
+      // Riwayat stok: hanya bisa ditambah.
+      match /moves/{id} {
+        allow read, create: if active();
+        allow update, delete: if false;
       }
     }
   }

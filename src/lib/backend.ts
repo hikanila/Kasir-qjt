@@ -19,9 +19,21 @@ export interface AuthApi {
   logout(): Promise<void>
 }
 
+/** Batas bawah waktu: hanya dokumen dengan field >= from yang dimuat. */
+export interface Since { field: string; from: number }
+
+export type Where = { field: string; op: '>=' | '<' | '=='; value: string | number }
+
 export interface Backend {
   mode: 'lokal' | 'online'
-  subscribe<T>(col: Col, cb: (rows: T[]) => void): () => void
+  /** Pantau koleksi secara langsung. Dengan `since`, hanya data terbaru yang dimuat (hemat kuota). */
+  subscribe<T>(col: Col, cb: (rows: T[]) => void, since?: Since): () => void
+  /** Ambil data sekali (mis. laporan bulan lama). Saat offline memakai salinan di perangkat. */
+  query<T>(col: Col, where: Where[]): Promise<T[]>
+  /** Ubah sebagian field dokumen. */
+  update(col: Col, id: string, patch: Record<string, unknown>): void
+  /** Tambah/kurangi angka secara atomik (aman dipakai beberapa perangkat bersamaan). */
+  increment(col: Col, id: string, field: string, delta: number): void
   subscribeDoc<T>(col: Col, id: string, cb: (row: T | null) => void): () => void
   /** Tulis dokumen. Tidak perlu ditunggu: saat offline, data diantrikan dan dikirim otomatis saat online. */
   put<T extends Doc>(col: Col, doc: T): void
@@ -46,8 +58,11 @@ function localBackend(): Backend {
   const db = new LocalDB()
   return {
     mode: 'lokal',
-    subscribe<T>(col: Col, cb: (rows: T[]) => void) {
-      const sub = liveQuery(() => db.table(col).toArray()).subscribe({
+    subscribe<T>(col: Col, cb: (rows: T[]) => void, since?: Since) {
+      const q = () => since
+        ? db.table(col).filter((r: Record<string, number>) => (r[since.field] ?? 0) >= since.from).toArray()
+        : db.table(col).toArray()
+      const sub = liveQuery(q).subscribe({
         next: (rows) => cb(rows as T[]),
         error: (e) => console.error(col, e),
       })
@@ -60,20 +75,32 @@ function localBackend(): Backend {
       })
       return () => sub.unsubscribe()
     },
+    async query<T>(col: Col, where: Where[]) {
+      const rows = await db.table(col).filter((r: Record<string, string | number>) => where.every((w) =>
+        w.op === '==' ? r[w.field] === w.value : w.op === '>=' ? r[w.field] >= w.value : r[w.field] < w.value,
+      )).toArray()
+      return rows as T[]
+    },
     put(col, doc) {
       db.table(col).put(JSON.parse(JSON.stringify(doc))).catch((e) => alert('Gagal menyimpan: ' + e))
+    },
+    update(col, id, patch) {
+      db.table(col).update(id, JSON.parse(JSON.stringify(patch))).catch((e) => alert('Gagal menyimpan: ' + e))
+    },
+    increment(col, id, field, delta) {
+      db.table(col)
+        .where('id')
+        .equals(id)
+        .modify((r: Record<string, number>) => {
+          r[field] = Math.round(((r[field] || 0) + delta) * 1000) / 1000
+        })
+        .catch((e) => alert('Gagal menyimpan: ' + e))
     },
     remove(col, id) {
       db.table(col).delete(id).catch((e) => alert('Gagal menghapus: ' + e))
     },
     addStock(productId, delta) {
-      db.table('products')
-        .where('id')
-        .equals(productId)
-        .modify((p: { stok?: number }) => {
-          p.stok = Math.round(((p.stok || 0) + delta) * 1000) / 1000
-        })
-        .catch((e) => alert('Gagal mengubah stok: ' + e))
+      this.increment('products', productId, 'stok', delta)
     },
   }
 }
@@ -147,9 +174,10 @@ async function firebaseBackend(cfg: FirebaseOptions): Promise<Backend> {
 
   return {
     mode: 'online',
-    subscribe<T>(c: Col, cb: (rows: T[]) => void) {
+    subscribe<T>(c: Col, cb: (rows: T[]) => void, since?: Since) {
+      const ref = since ? fs.query(col(c), fs.where(since.field, '>=', since.from)) : col(c)
       return fs.onSnapshot(
-        col(c),
+        ref,
         (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id }) as T)),
         (e) => console.error(c, e),
       )
@@ -161,8 +189,20 @@ async function firebaseBackend(cfg: FirebaseOptions): Promise<Backend> {
         (e) => console.error(c, e),
       )
     },
+    async query<T>(c: Col, where: Where[]) {
+      const q = fs.query(col(c), ...where.map((w) => fs.where(w.field, w.op, w.value)))
+      let snap
+      try { snap = await fs.getDocs(q) } catch { snap = await fs.getDocsFromCache(q) }
+      return snap.docs.map((d) => ({ ...d.data(), id: d.id }) as T)
+    },
     put(c, d) {
       fs.setDoc(fs.doc(col(c), d.id), d).catch(fail('menyimpan'))
+    },
+    update(c, id, patch) {
+      fs.updateDoc(fs.doc(col(c), id), patch).catch(fail('menyimpan'))
+    },
+    increment(c, id, field, delta) {
+      fs.updateDoc(fs.doc(col(c), id), { [field]: fs.increment(delta) }).catch(fail('menyimpan'))
     },
     remove(c, id) {
       fs.deleteDoc(fs.doc(col(c), id)).catch(fail('menghapus'))

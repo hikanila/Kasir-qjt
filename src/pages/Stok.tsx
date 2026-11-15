@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
-import type { MoveType, Product } from '../types'
+import type { Move, MoveType, Product } from '../types'
+import { useRange } from '../lib/range'
+import { PeriodSelect, periodRange, RECENT } from '../components/PeriodSelect'
 import { useStore } from '../lib/store'
 import { findByBarcode, searchProducts } from '../lib/search'
 import { qtyFmt, stokLabel, tglJam } from '../lib/format'
@@ -133,12 +135,15 @@ function Riwayat() {
   const [f, setF] = useState<MoveType | 'semua'>('semua')
   const [q, setQ] = useState('')
   const [limit, setLimit] = useState(100)
+  const [per, setPer] = useState(RECENT)
+  const [a, b] = periodRange(per, st.sinceLogs)
+  const moves = useRange<Move>('moves', st.moves, st.sinceLogs, a, b)
   const list = useMemo(() => {
     const ql = q.trim().toLowerCase()
-    return [...st.moves]
+    return [...moves.rows]
       .filter((m) => (f === 'semua' || m.tipe === f) && (!ql || m.nama.toLowerCase().includes(ql) || (m.supplier || '').toLowerCase().includes(ql)))
       .sort((a, b) => b.waktu - a.waktu)
-  }, [st.moves, f, q])
+  }, [moves.rows, f, q])
   return (
     <>
       <div className="toolbar">
@@ -147,7 +152,9 @@ function Riwayat() {
           <option value="semua">Semua jenis</option>
           {Object.entries(TIPE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
+        <PeriodSelect value={per} onChange={setPer} />
       </div>
+      {moves.loading && <p className="muted small">Memuat data lama…</p>}
       {list.length === 0 && <Empty>Belum ada riwayat.</Empty>}
       <div className="table-wrap">
         <table className="tbl">

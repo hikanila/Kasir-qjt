@@ -18,6 +18,7 @@ export function CustomerPicker({
         <div>
           <b>{value.nama}</b> {value.hp && <span className="muted">· {value.hp}</span>}
           {h > 0 && <div className="small warn-text">Hutang berjalan: {rp(h)}</div>}
+          {h < 0 && <div className="small ok-text">Kelebihan bayar: {rp(-h)}</div>}
         </div>
         <button className="btn sm" onClick={() => onChange(null)}>Ganti</button>
       </div>
@@ -41,7 +42,7 @@ export function CustomerPicker({
           <input placeholder="No. HP/WA (opsional)" inputMode="tel" value={hp} onChange={(e) => setHp(e.target.value)} />
           <button className="btn sm primary" onClick={() => {
             const c: Customer = { id: uid(), nama: q.trim(), hp: hp.trim() || undefined, dibuat: Date.now() }
-            st.saveCustomer(c)
+            st.addCustomer(c)
             onChange(c)
           }}>+ Pelanggan baru "{q.trim()}"</button>
         </div>

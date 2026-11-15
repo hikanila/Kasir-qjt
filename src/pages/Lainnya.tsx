@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { AppUser, Sale, Settings } from '../types'
+import type { AppUser, LogEntry, Payment, Sale, Settings } from '../types'
+import { monthOptions, useRange } from '../lib/range'
+import { PeriodSelect, periodRange, RECENT } from '../components/PeriodSelect'
 import { useStore } from '../lib/store'
 import { qtyFmt, rp, startOfDay, tgl, tglJam } from '../lib/format'
 import { download } from '../lib/nota'
@@ -30,32 +32,32 @@ export function Lainnya() {
 
 /* ------------------------------ Laporan ------------------------------ */
 
-type Range = 'hari' | 'kemarin' | '7hari' | 'bulan' | 'bulanlalu'
+const MONTHS = monthOptions(12)
 
-function rangeOf(r: Range): [number, number] {
+/** Periode laporan: hari ini, kemarin, 7 hari, atau bulan tertentu (12 bulan terakhir). */
+function rangeOf(r: string): [number, number] {
   const today = startOfDay()
-  const now = new Date()
-  switch (r) {
-    case 'hari': return [today, Infinity]
-    case 'kemarin': return [today - 864e5, today]
-    case '7hari': return [today - 6 * 864e5, Infinity]
-    case 'bulan': return [new Date(now.getFullYear(), now.getMonth(), 1).getTime(), Infinity]
-    case 'bulanlalu': return [new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime(), new Date(now.getFullYear(), now.getMonth(), 1).getTime()]
-  }
+  if (r === 'hari') return [today, Infinity]
+  if (r === 'kemarin') return [today - 864e5, today]
+  if (r === '7hari') return [today - 6 * 864e5, Infinity]
+  const m = MONTHS.find((x) => x.key === r)
+  return m ? [m.a, m.b] : [today, Infinity]
 }
 
 function Laporan() {
   const st = useStore()
-  const [r, setR] = useState<Range>('hari')
+  const [r, setR] = useState<string>('hari')
   const [nota, setNota] = useState<Sale | null>(null)
   const [showBatal, setShowBatal] = useState(false)
+  const [a, b] = useMemo(() => rangeOf(r), [r])
+  const salesR = useRange<Sale>('sales', st.sales, st.sinceSales, a, b)
+  const payR = useRange<Payment>('payments', st.payments, st.sinceSales, a, b)
 
   const d = useMemo(() => {
-    const [a, b] = rangeOf(r)
-    const sales = st.sales.filter((s) => s.waktu >= a && s.waktu < b).sort((x, y) => y.waktu - x.waktu)
+    const sales = [...salesR.rows].sort((x, y) => y.waktu - x.waktu)
     const ok = sales.filter((s) => s.status === 'ok')
     const sum = (f: (s: Sale) => number, l = ok) => l.reduce((acc, s) => acc + f(s), 0)
-    const pay = st.payments.filter((p) => p.waktu >= a && p.waktu < b)
+    const pay = payR.rows.filter((p) => p.status !== 'batal')
     const barang = new Map<string, { nama: string; qty: number; unit: string; omzet: number }>()
     for (const s of ok) for (const it of s.items) {
       const k = it.productId + it.unit
@@ -78,18 +80,20 @@ function Laporan() {
       batal: sales.length - ok.length,
       top: [...barang.values()].sort((x, y) => y.omzet - x.omzet).slice(0, 10),
     }
-  }, [st.sales, st.payments, r])
+  }, [salesR.rows, payR.rows])
 
   const list = showBatal ? d.sales : d.ok
   return (
     <>
-      <select value={r} onChange={(e) => setR(e.target.value as Range)} className="range">
-        <option value="hari">Hari ini</option>
-        <option value="kemarin">Kemarin</option>
-        <option value="7hari">7 hari terakhir</option>
-        <option value="bulan">Bulan ini</option>
-        <option value="bulanlalu">Bulan lalu</option>
-      </select>
+      <div className="row">
+        <select value={r} onChange={(e) => setR(e.target.value)} className="range">
+          <option value="hari">Hari ini</option>
+          <option value="kemarin">Kemarin</option>
+          <option value="7hari">7 hari terakhir</option>
+          {MONTHS.map((m, i) => <option key={m.key} value={m.key}>{i === 0 ? `Bulan ini (${m.label})` : m.label}</option>)}
+        </select>
+        {(salesR.loading || payR.loading) && <span className="muted small">Memuat data lama…</span>}
+      </div>
       <div className="stat-row">
         <div className="stat big"><small>Omzet penjualan</small><b>{rp(d.omzet)}</b><small>{d.ok.length} transaksi</small></div>
         <div className="stat"><small>Tunai</small><b>{rp(d.tunai)}</b></div>
@@ -135,14 +139,21 @@ function Aktivitas() {
   const st = useStore()
   const [q, setQ] = useState('')
   const [limit, setLimit] = useState(150)
+  const [per, setPer] = useState(RECENT)
+  const [a, b] = periodRange(per, st.sinceLogs)
+  const logs = useRange<LogEntry>('logs', st.logs, st.sinceLogs, a, b)
   const list = useMemo(() => {
     const ql = q.trim().toLowerCase()
-    return [...st.logs].filter((l) => !ql || `${l.user} ${l.aksi} ${l.detail}`.toLowerCase().includes(ql)).sort((a, b) => b.waktu - a.waktu)
-  }, [st.logs, q])
+    return [...logs.rows].filter((l) => !ql || `${l.user} ${l.aksi} ${l.detail}`.toLowerCase().includes(ql)).sort((a, b) => b.waktu - a.waktu)
+  }, [logs.rows, q])
   return (
     <>
       <p className="muted small">Semua perubahan harga, diskon, pembatalan, bon, dan stok tercatat di sini beserta siapa yang melakukannya.</p>
-      <input placeholder="Cari (nama kasir, 'diskon', 'batal', nama barang…)" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="toolbar">
+        <input placeholder="Cari (nama kasir, 'diskon', 'batal', nama barang…)" value={q} onChange={(e) => setQ(e.target.value)} />
+        <PeriodSelect value={per} onChange={setPer} />
+      </div>
+      {logs.loading && <p className="muted small">Memuat data lama…</p>}
       {list.length === 0 && <Empty>Belum ada aktivitas.</Empty>}
       <div className="table-wrap">
         <table className="tbl">

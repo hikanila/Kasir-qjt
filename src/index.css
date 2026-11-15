@@ -269,3 +269,5 @@ div.hist-row { cursor: default; }
 
 .backup-banner { display: flex; align-items: center; gap: 8px; background: #fff7ed; color: #9a3412; border-bottom: 1px solid #fed7aa; padding: 6px 12px; font-size: .85rem; }
 .backup-banner span { flex: 1; }
+.hist-row.batal-soft { opacity: .6; }
+.strike { text-decoration: line-through; }
