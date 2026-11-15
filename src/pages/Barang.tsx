@@ -94,6 +94,13 @@ function ProductForm({ product, onClose }: { product: Product | null; onClose: (
 
   const setU = (i: number, patch: Partial<Unit>) => setUnits((us) => us.map((u, j) => (j === i ? { ...u, ...patch } : u)))
 
+  // Minta konfirmasi bila ada isian yang belum disimpan.
+  const [awal] = useState(() => JSON.stringify({ nama, kategori, units, stok, stokMin }))
+  const dirty = JSON.stringify({ nama, kategori, units, stok, stokMin }) !== awal
+  const tutup = () => {
+    if (!dirty || confirm('Tutup tanpa menyimpan? Data yang sudah diisi akan hilang.')) onClose()
+  }
+
   const errors: string[] = []
   if (!nama.trim()) errors.push('Nama barang wajib diisi')
   const names = units.map((u) => u.nama.trim().toLowerCase())
@@ -125,7 +132,7 @@ function ProductForm({ product, onClose }: { product: Product | null; onClose: (
   }
 
   return (
-    <Modal title={product ? 'Ubah barang' : 'Barang baru'} onClose={onClose} wide>
+    <Modal title={product ? 'Ubah barang' : 'Barang baru'} onClose={tutup} wide>
       <label>Nama barang</label>
       <input value={nama} onChange={(e) => setNama(e.target.value)} placeholder="cth. Semen Tonasa 50kg" autoFocus={!product} />
       <label>Kategori (opsional)</label>
@@ -192,7 +199,7 @@ function ProductForm({ product, onClose }: { product: Product | null; onClose: (
           <button className="btn danger" onClick={() => { st.deleteProduct(product); onClose() }}>Yakin hapus "{product.nama}"?</button>
         )}
         <span className="spacer" />
-        <button className="btn" onClick={onClose}>Batal</button>
+        <button className="btn" onClick={tutup}>Batal</button>
         <button className="btn primary" disabled={errors.length > 0} onClick={save}>Simpan</button>
       </div>
 

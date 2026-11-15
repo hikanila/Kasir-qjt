@@ -9,11 +9,12 @@ export function Modal({
     return () => window.removeEventListener('keydown', k)
   }, [onClose])
   return (
-    <div className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    // Sentuhan di luar kotak sengaja TIDAK menutup jendela, agar isian tidak hilang tanpa sengaja.
+    <div className="modal-bg">
       <div className={'modal' + (wide ? ' wide' : '')} role="dialog" aria-label={title}>
         <div className="modal-head">
           <h3>{title}</h3>
-          <button className="icon-btn" onClick={onClose} aria-label="Tutup">✕</button>
+          <button className="close-btn" onClick={onClose} aria-label="Tutup" title="Tutup">✕</button>
         </div>
         <div className="modal-body">{children}</div>
       </div>

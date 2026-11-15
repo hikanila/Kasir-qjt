@@ -271,3 +271,7 @@ div.hist-row { cursor: default; }
 .backup-banner span { flex: 1; }
 .hist-row.batal-soft { opacity: .6; }
 .strike { text-decoration: line-through; }
+
+.close-btn { border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; width: 40px; height: 40px; border-radius: 10px; font-size: 1.1rem; font-weight: 700; cursor: pointer; flex-shrink: 0; }
+.close-btn:hover { background: #fee2e2; border-color: #fca5a5; color: #b91c1c; }
+.modal-head { position: sticky; top: 0; background: #fff; z-index: 2; border-radius: 16px 16px 0 0; }
