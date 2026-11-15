@@ -82,6 +82,22 @@ function Laporan() {
     }
   }, [salesR.rows, payR.rows])
 
+  const [xlsBusy, setXlsBusy] = useState(false)
+  async function unduhExcel() {
+    setXlsBusy(true)
+    try {
+      const label = r === 'hari' ? `Hari ini ${tgl(Date.now())}` : r === 'kemarin' ? `Kemarin ${tgl(Date.now() - 864e5)}`
+        : r === '7hari' ? `7 hari terakhir s.d. ${tgl(Date.now())}` : MONTHS.find((m) => m.key === r)?.label || ''
+      const { buildMonthlyReport } = await import('../lib/report')
+      const buf = await buildMonthlyReport({
+        namaToko: st.settings.namaToko, judulPeriode: label, a, b: Math.min(b, Date.now() + 864e5),
+        sales: salesR.rows, payments: payR.rows, products: st.products, customers: st.customers,
+      })
+      download(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+        `Laporan ${st.settings.namaToko} - ${label.replace(/[/\\:]/g, '-')}.xlsx`)
+    } catch (e) { alert('Gagal membuat Excel: ' + e) } finally { setXlsBusy(false) }
+  }
+
   const list = showBatal ? d.sales : d.ok
   return (
     <>
@@ -93,6 +109,10 @@ function Laporan() {
           {MONTHS.map((m, i) => <option key={m.key} value={m.key}>{i === 0 ? `Bulan ini (${m.label})` : m.label}</option>)}
         </select>
         {(salesR.loading || payR.loading) && <span className="muted small">Memuat data lama…</span>}
+        <span className="spacer" />
+        <button className="btn sm" disabled={salesR.loading || payR.loading || xlsBusy} onClick={unduhExcel}>
+          {xlsBusy ? 'Membuat…' : '⬇ Unduh Excel'}
+        </button>
       </div>
       <div className="stat-row">
         <div className="stat big"><small>Omzet penjualan</small><b>{rp(d.omzet)}</b><small>{d.ok.length} transaksi</small></div>

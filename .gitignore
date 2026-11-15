@@ -25,3 +25,6 @@ dist-ssr
 
 # Konfigurasi Firebase lokal
 .env
+
+# Hasil uji backup
+backup-out/
