@@ -43,7 +43,8 @@ function AuthGate({ backend }: { backend: Backend }) {
   if (user === undefined) return <Splash text="Memeriksa akun…" />
   if (!user) return <Login backend={backend} />
   if (me === undefined) return <Splash text="Memuat data pengguna…" />
-  if (!me || me.role === 'menunggu') {
+  if (!me) return <CompleteProfile backend={backend} user={user} />
+  if (me.role === 'menunggu') {
     return (
       <div className="login">
         <div className="login-card">
@@ -56,6 +57,28 @@ function AuthGate({ backend }: { backend: Backend }) {
     )
   }
   return <StoreProvider backend={backend} me={{ ...me, id: user.uid }}><Shell /></StoreProvider>
+}
+
+/** Akun login sudah ada tapi data penggunanya belum tercatat (mis. pendaftaran terputus). */
+function CompleteProfile({ backend, user }: { backend: Backend; user: AuthUser }) {
+  const [nama, setNama] = useState('')
+  const [sent, setSent] = useState(false)
+  return (
+    <div className="login">
+      <div className="login-card">
+        <div className="logo">QJT</div>
+        <h2>Lengkapi pendaftaran</h2>
+        <p>Akun <b>{user.email}</b> sudah dibuat, tapi pendaftarannya belum selesai. Isi nama Anda lalu kirim permintaan akses ke pemilik toko.</p>
+        <label>Nama (tampil di struk)</label>
+        <input value={nama} onChange={(e) => setNama(e.target.value)} autoFocus />
+        <button className="btn primary block lg" disabled={!nama.trim() || sent} onClick={() => {
+          setSent(true)
+          backend.put('users', { id: user.uid, nama: nama.trim(), email: user.email || '', role: 'menunggu' })
+        }}>{sent ? 'Mengirim…' : 'Kirim permintaan akses'}</button>
+        <button className="btn block" onClick={() => backend.auth!.logout()}>Keluar</button>
+      </div>
+    </div>
+  )
 }
 
 const authError = (e: unknown) => {

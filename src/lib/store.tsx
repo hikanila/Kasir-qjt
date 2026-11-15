@@ -42,6 +42,7 @@ export interface Store extends Omit<Data, 'settingsRows'> {
   addPayment(p: Payment, namaPelanggan: string): void
   saveSettings(s: Settings): void
   setUserRole(u: AppUser, role: AppUser['role']): void
+  removeUser(u: AppUser): void
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -173,6 +174,10 @@ export function StoreProvider({ backend, me, children }: { backend: Backend; me:
       setUserRole(u, role) {
         backend.put('users', { ...u, role })
         log('Ubah hak pengguna', `${u.nama} → ${role}`)
+      },
+      removeUser(u) {
+        backend.remove('users', u.id)
+        log('Hapus pengguna', `${u.nama} (${u.email || '-'})`)
       },
     }
   }, [data, loaded, backend, me, isOwner])

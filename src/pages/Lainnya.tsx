@@ -207,9 +207,15 @@ function Pengguna() {
         <div key={u.id} className="row between user-row">
           <div><b>{u.nama}</b><div className="small muted">{u.email}</div></div>
           {u.id === st.me.id ? <span className="badge">{u.role} (Anda)</span> : (
-            <select value={u.role} onChange={(e) => st.setUserRole(u, e.target.value as AppUser['role'])}>
-              {roles.map((r) => <option key={r} value={r}>{r === 'menunggu' ? 'nonaktif / menunggu' : r}</option>)}
-            </select>
+            <div className="row" style={{ flexWrap: 'nowrap' }}>
+              <select value={u.role} onChange={(e) => st.setUserRole(u, e.target.value as AppUser['role'])}>
+                {roles.map((r) => <option key={r} value={r}>{r === 'menunggu' ? 'nonaktif / menunggu' : r}</option>)}
+              </select>
+              {u.role === 'menunggu' && (
+                <button className="icon-btn" title="Hapus pengguna" aria-label={`Hapus ${u.nama}`}
+                  onClick={() => confirm(`Hapus ${u.nama} (${u.email}) dari daftar pengguna?`) && st.removeUser(u)}>🗑</button>
+              )}
+            </div>
           )}
         </div>
       ))}
